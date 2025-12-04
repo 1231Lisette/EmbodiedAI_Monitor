@@ -1,0 +1,25 @@
+# 抓取配置
+keywords:
+  - "embodied ai"
+  - "robotic manipulation"
+  - "sim2real"
+  - "manipulation"
+  - "humanoid robot"
+  - "robot learning"
+  - “VLA”
+
+# GitHub Topics
+github_topics:
+  - "robotics"
+  - "embodied-ai"
+  - "manipulation"
+  - "sim2real"
+
+# API 配置 (可选，留空则使用公开限额)
+api_keys:
+  github: ""          # GitHub Personal Access Token
+  semantic_scholar: ""
+
+# 抓取限制
+max_arxiv: 50
+max_github: 30

@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>具身智能每日追踪</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f7f9fb; }
+        [x-cloak] { display: none !important; }
+    </style>
+</head>
+<body>
+
+<script src="data.js"></script>
+
+<div x-data="researchDashboard()" x-init="initData()" class="min-h-screen p-4 md:p-8 max-w-7xl mx-auto">
+
+    <header class="mb-8 flex flex-col md:flex-row md:items-end justify-between">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-800 tracking-tight">Embodied AI Monitor</h1>
+            <p class="text-gray-500 mt-1">每日自动抓取的具身智能论文与 GitHub 项目</p>
+        </div>
+        <p class="text-xs text-gray-400 mt-2 md:mt-0">最后更新: <span x-text="lastUpdate"></span></p>
+    </header>
+
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
+        <div class="flex flex-col md:flex-row md:items-center justify-between space-y-4 md:space-y-0 gap-4">
+            
+            <nav class="flex space-x-1 p-1 bg-gray-100 rounded-lg self-start">
+                <button @click="currentTab = 'papers'; page=1"
+                    :class="{'bg-white text-blue-600 shadow-sm': currentTab === 'papers', 'text-gray-500 hover:text-gray-700': currentTab !== 'papers'}"
+                    class="py-2 px-6 rounded-md text-sm font-semibold transition-all duration-200">
+                    Papers
+                </button>
+                <button @click="currentTab = 'projects'; page=1"
+                    :class="{'bg-white text-blue-600 shadow-sm': currentTab === 'projects', 'text-gray-500 hover:text-gray-700': currentTab !== 'projects'}"
+                    class="py-2 px-6 rounded-md text-sm font-semibold transition-all duration-200">
+                    GitHub
+                </button>
+            </nav>
+
+            <div class="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-3 w-full md:w-auto">
+                <div class="relative group w-full md:w-64">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <svg class="h-5 w-5 text-gray-400 group-focus-within:text-blue-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                    </div>
+                    <input type="text" x-model="searchQuery" placeholder="搜索标题、作者..."
+                        class="pl-10 p-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-100 focus:border-blue-500 w-full transition duration-150 outline-none">
+                </div>
+
+                <select x-model="sortBy" class="p-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none cursor-pointer">
+                    <option value="date">按日期 (最新)</option>
+                    <option value="title">按标题 (A-Z)</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="mt-6 pt-4 border-t border-gray-100">
+            <div class="flex items-center mb-3">
+                <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mr-2">Filters</h3>
+                <span x-show="selectedTags.length > 0" @click="selectedTags = []" class="text-xs text-blue-500 cursor-pointer hover:underline">清除所有</span>
+            </div>
+            <div class="flex flex-wrap gap-2">
+                <template x-for="tag in presetTags" :key="tag">
+                    <button @click="toggleTag(tag)"
+                        :class="{'bg-blue-600 text-white shadow-md ring-2 ring-blue-200': selectedTags.includes(tag), 'bg-white text-gray-600 border border-gray-200 hover:border-blue-400 hover:text-blue-600': !selectedTags.includes(tag)}"
+                        class="px-3 py-1.5 text-xs font-medium rounded-full transition-all duration-200">
+                        <span x-text="tag"></span>
+                    </button>
+                </template>
+            </div>
+        </div>
+    </div>
+
+    <div class="space-y-6">
+        
+        <div x-show="loading" class="flex justify-center items-center py-20">
+            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            <span class="ml-3 text-gray-500">正在加载本地数据...</span>
+        </div>
+
+        <div x-show="!loading && filteredItems.length === 0" x-cloak class="text-center py-16 bg-white rounded-xl border border-gray-100 border-dashed">
+            <svg class="mx-auto h-12 w-12 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <p class="mt-2 text-gray-500">没有找到匹配结果</p>
+        </div>
+
+        <div x-show="!loading && filteredItems.length > 0" x-cloak class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <template x-for="item in paginatedItems" :key="item.id">
+                <div class="group bg-white p-6 rounded-xl border border-gray-100 shadow-sm hover:shadow-lg hover:border-blue-200 transition-all duration-300 flex flex-col h-full relative overflow-hidden">
+                    
+                    <div class="absolute top-0 right-0 p-4">
+                         <span :class="item.source === 'arXiv' ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-700'" 
+                               class="text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wide" 
+                               x-text="item.source"></span>
+                    </div>
+
+                    <div class="mb-4 pr-10">
+                        <h2 class="text-lg font-bold text-gray-800 leading-snug group-hover:text-blue-600 transition-colors" x-text="item.title"></h2>
+                        <div class="flex items-center mt-2 text-xs text-gray-500">
+                            <span class="font-medium text-gray-700 truncate max-w-[150px]" x-text="item.author"></span>
+                            <span class="mx-2">•</span>
+                            <span x-text="item.date"></span>
+                            <template x-if="item.stars">
+                                <span class="flex items-center ml-2 text-yellow-600">
+                                    <svg class="w-3 h-3 mr-1 fill-current" viewBox="0 0 24 24"><path d="M12 .587l3.668 7.568 8.332 1.151-6.064 5.828 1.48 8.279-7.416-3.967-7.417 3.967 1.481-8.279-6.064-5.828 8.332-1.151z"/></svg>
+                                    <span x-text="item.stars"></span>
+                                </span>
+                            </template>
+                        </div>
+                    </div>
+                    
+                    <p class="text-sm text-gray-600 mb-4 flex-grow leading-relaxed" x-text="item.abstract.length > 150 ? item.abstract.substring(0, 150) + '...' : item.abstract"></p>
+                    
+                    <div class="flex flex-wrap gap-2 mb-5">
+                        <template x-for="tag in item.tags.slice(0, 3)" :key="tag">
+                            <span class="text-[10px] bg-gray-50 text-gray-600 px-2 py-1 rounded border border-gray-100" x-text="tag"></span>
+                        </template>
+                    </div>
+
+                    <a :href="item.url" target="_blank" class="mt-auto block text-center w-full py-2 px-4 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-lg text-sm font-semibold transition-colors duration-200">
+                        <span x-text="item.source === 'arXiv' ? 'View PDF' : 'View Repository'"></span> &rarr;
+                    </a>
+                </div>
+            </template>
+        </div>
+
+        <div x-show="!loading && filteredItems.length > itemsPerPage" x-cloak class="flex justify-center items-center space-x-2 pt-6 pb-12">
+            <button @click="page = page - 1; scrollToTop()" :disabled="page === 1"
+                    class="p-2 border rounded-lg text-gray-500 transition duration-150 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-50">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+            </button>
+            
+            <span class="text-sm font-medium text-gray-600 px-4">
+                Page <span x-text="page" class="font-bold text-gray-900"></span> of <span x-text="totalPages"></span>
+            </span>
+
+            <button @click="page = page + 1; scrollToTop()" :disabled="page === totalPages"
+                    class="p-2 border rounded-lg text-gray-500 transition duration-150 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-50">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+    window.researchDashboard = function() {
+        return {
+            loading: true,
+            currentTab: 'papers',
+            searchQuery: '',
+            sortBy: 'date',
+            allData: [], 
+            lastUpdate: '',
+            itemsPerPage: 9, // 每页显示9个
+            page: 1,
+            presetTags: [], // 从数据中动态获取
+            selectedTags: [],
+
+            initData() {
+                // 模拟延迟，让加载动画显示一下，更有感觉
+                setTimeout(() => {
+                    if (window.RESEARCH_DATA) {
+                        this.allData = window.RESEARCH_DATA;
+                        this.lastUpdate = window.LAST_UPDATE || 'Unknown';
+                        
+                        // 从数据中获取热门标签 (取前10个)
+                        // 这里简单处理，直接使用 Python 生成的所有标签的前 12 个
+                        if (window.ALL_TAGS) {
+                            this.presetTags = window.ALL_TAGS.slice(0, 12); 
+                        }
+                        
+                        this.loading = false;
+                    } else {
+                        console.error("未找到 data.js 数据，请先运行 Python 抓取脚本。");
+                        this.loading = false;
+                    }
+                }, 500);
+            },
+
+            toggleTag(tag) {
+                if (this.selectedTags.includes(tag)) {
+                    this.selectedTags = this.selectedTags.filter(t => t !== tag);
+                } else {
+                    this.selectedTags.push(tag);
+                }
+                this.page = 1;
+            },
+
+            scrollToTop() {
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            },
+
+            get filteredItems() {
+                // 1. Tab 过滤
+                let filtered = this.allData.filter(item => item.type === this.currentTab);
+
+                // 2. 搜索过滤
+                if (this.searchQuery) {
+                    const q = this.searchQuery.toLowerCase();
+                    filtered = filtered.filter(item =>
+                        item.title.toLowerCase().includes(q) ||
+                        item.author.toLowerCase().includes(q) ||
+                        item.tags.some(tag => tag && tag.toLowerCase().includes(q))
+                    );
+                }
+
+                // 3. 标签过滤
+                if (this.selectedTags.length > 0) {
+                    filtered = filtered.filter(item =>
+                        this.selectedTags.every(tag => item.tags.includes(tag))
+                    );
+                }
+                
+                // 4. 排序
+                filtered.sort((a, b) => {
+                    if (this.sortBy === 'date') {
+                        return new Date(b.date) - new Date(a.date);
+                    } else if (this.sortBy === 'title') {
+                        return a.title.localeCompare(b.title);
+                    }
+                });
+
+                return filtered;
+            },
+
+            get totalPages() {
+                return Math.ceil(this.filteredItems.length / this.itemsPerPage) || 1;
+            },
+
+            get paginatedItems() {
+                const start = (this.page - 1) * this.itemsPerPage;
+                const end = start + this.itemsPerPage;
+                return this.filteredItems.slice(start, end);
+            }
+        }
+    }
+</script>
+</body>
+</html>
