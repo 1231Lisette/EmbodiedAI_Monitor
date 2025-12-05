@@ -5,3 +5,5 @@ fake-useragent
 feedparser
 huggingface_hub
 openai
+streamlit 
+beautifulsoup4

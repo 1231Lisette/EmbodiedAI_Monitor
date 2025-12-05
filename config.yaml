@@ -20,52 +20,14 @@ github_topics:
   - "simulation"
   - "reinforcement-learning"
   - "lerobot"
-
-# --- 新增：智能评分权重 (这是过滤水文的关键) ---
-# 包含这些词的项目/论文会获得高分，排在前面
+# 3. 智能评分关键词 (LLM 会参考这个，也会自己判断)
 interest_scoring:
-  # 高优先级 (权重 3)
-  high:
-    - "embodied ai"
-    - "robotics"
-    - "VLA"
-    - "low-cost"
-    - "low cost"
-    - "aloha"
-    - "mobile aloha"
-    - "diffusion policy"
-    - "imitation learning"
-    - "act"
-    - "teleoperation"
-  # 中优先级 (权重 1)
-  medium:
-    - "transformer"
-    - "reinforcement learning"
-    - "sim2real"
-    - "gripper"
+  high: ["low-cost", "mobile aloha", "diffusion policy", "act", "teleoperation", "sim2real"]
 
-# --- 新增：Hugging Face 监控配置 ---
+# 4. Hugging Face
 huggingface:
-  # 监控的任务类型
-  tasks: 
-    - "robotics"
-    - "VLA"
-    - "reinforcement-learning"
-    - "visual-question-answering"
-    - "text-to-video" # 很多 world model 实际上是 video model
-  # 重点关注的组织 (只要他们发模型，立刻置顶)
-  orgs:
-    - "google"
-    - "meta"
-    - "nvidia"
-    - "allenai"
-    - "microsoft"
-    - "berkeley-learn"
-    - "deepseek"
-    - "qwen"
-    - "kimi"
-    - "stanford-iprl-lab"
-    - "lerobot" # Hugging Face 自家的机器人库
+  tasks: ["robotics", "reinforcement-learning", "video-prediction"]
+  orgs: ["google", "meta", "nvidia", "lerobot", "stanford-iprl-lab"]
 
 # 抓取限制
 max_arxiv: 60
@@ -80,3 +42,17 @@ llm:
   api_key: "sk-cspdauvptgwpungdmyhcbywyarzklnodwsjfupwdzbyfmxkl"
   # 免费且强大的模型，推荐 Qwen/Qwen2.5-7B-Instruct
   model_name: "Qwen/Qwen2.5-7B-Instruct"
+
+# 6. 推送配置 (改为邮件)
+notification:
+  enabled: true
+  method: "email"
+  email:
+    smtp_server: "smtp.qq.com"
+    smtp_port: 465
+    # 发件人 (就是你自己的 QQ 邮箱)
+    sender: "2405848522@qq.com"
+    # 授权码 (注意！这里不是 QQ 密码，是去邮箱设置里生成的16位授权码)
+    password: "ozqlqadcjwrteajd" 
+    # 收件人 (也是你自己)
+    receiver: "2405848522@qq.com"

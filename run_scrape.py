@@ -1,44 +1,63 @@
 import os
-import json
-import time
 import yaml
-import requests
-import feedparser
 import logging
+import requests
+import smtplib
 from datetime import datetime
-from fake_useragent import UserAgent
-# 引入我们写好的模块
+from email.mime.text import MIMEText
+from email.header import Header
+from email.utils import formataddr
+from src.database import Database
 from src.scrapers import ArxivScraper, GithubScraper, HuggingFaceScraper
 from src.llm_agent import LLMAgent
+from src.processor import Processor
+import json # 确保导入 json
 
-# --- 配置日志 ---
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# 日志配置
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# --- 工具类：生成标签 ---
-class TagGenerator:
-    def __init__(self):
-        self.rules = {
-            "Sim2Real": ["sim2real", "simulation", "transfer"],
-            "Manipulation": ["manipulation", "grasping", "pick and place", "dexterous"],
-            "Locomotion": ["locomotion", "walking", "legged", "quadruped"],
-            "Vision": ["vision", "camera", "depth", "perception", "3d"],
-            "LLM/VLA": ["language model", "llm", "vla", "transformer", "foundation model"],
-            "Humanoid": ["humanoid", "bipedal"],
-            "Reinforcement": ["reinforcement learning", "rl", "policy"]
-        }
+def send_email_notification(config, content):
+    """发送邮件推送"""
+    email_conf = config.get('notification', {}).get('email', {})
+    if not config.get('notification', {}).get('enabled'):
+        return
 
-    def get_tags(self, text):
-        text = text.lower()
-        tags = set()
-        for tag, keywords in self.rules.items():
-            if any(k in text for k in keywords):
-                tags.add(tag)
-        return list(tags) if tags else ["General"]
+    sender = email_conf.get('sender')
+    password = email_conf.get('password')
+    receiver = email_conf.get('receiver')
+    smtp_server = email_conf.get('smtp_server')
+    smtp_port = email_conf.get('smtp_port')
 
-# --- 主程序逻辑 ---
+    if not all([sender, password, receiver, smtp_server, smtp_port]):
+        logger.error("邮件配置不完整，无法发送推送")
+        return
+
+    # 构建邮件
+    subject = f"🤖 Embodied AI 日报 - {len(content.splitlines())//4} 条精选"
+    message = MIMEText(content, 'plain', 'utf-8')
+    
+    # 使用 formataddr 生成符合 RFC 标准的头部
+    message['From'] = formataddr(["AI Monitor", sender])
+    message['To'] = formataddr(["Researcher", receiver])
+    message['Subject'] = Header(subject, 'utf-8')
+
+    try:
+        logger.info("正在发送邮件...")
+        if smtp_port == 465:
+            server = smtplib.SMTP_SSL(smtp_server, smtp_port)
+        else:
+            server = smtplib.SMTP(smtp_server, smtp_port)
+            server.starttls()
+        
+        server.login(sender, password)
+        server.sendmail(sender, [receiver], message.as_string())
+        server.quit()
+        logger.info("✅ 邮件发送成功！请检查收件箱")
+    except Exception as e:
+        logger.error(f"❌ 邮件发送失败: {e}")
+
 def main():
-    # 1. 读取配置
     base_dir = os.path.dirname(os.path.abspath(__file__))
     config_path = os.path.join(base_dir, 'config.yaml')
     
@@ -49,78 +68,85 @@ def main():
     with open(config_path, 'r', encoding='utf-8') as f:
         config = yaml.safe_load(f)
 
-    # 2. 抓取数据
-    tagger = TagGenerator()
+    db = Database()
+    llm = LLMAgent(config)
+    tagger = Processor()
+
+    items_to_process = []
+
+    # 1. 抓取 (ArXiv)
+    logger.info("🚀 开始抓取 ArXiv...")
+    for p in ArxivScraper(config).scrape():
+        p['type'] = 'papers'
+        items_to_process.append(p)
+
+    # 2. 抓取 (GitHub)
+    logger.info("🚀 开始抓取 GitHub...")
+    for p in GithubScraper(config).scrape():
+        p['type'] = 'projects'
+        # GitHub 预览图
+        p['media_url'] = f"https://opengraph.githubassets.com/1/{p['id'].replace('github:', '')}"
+        items_to_process.append(p)
+
+    # 3. 抓取 (Hugging Face)
+    logger.info("🚀 开始抓取 Hugging Face...")
+    for p in HuggingFaceScraper(config).scrape():
+        p['type'] = 'models'
+        items_to_process.append(p)
+
+    # 4. AI 审稿
+    logger.info(f"🧠 AI 正在评审 {len(items_to_process)} 条内容...")
     
-    # --- ArXiv ---
-    arxiv_scraper = ArxivScraper(config)
-    data_papers = arxiv_scraper.scrape()
-    for p in data_papers:
-        p['tags'] = tagger.get_tags(p['title'] + " " + p['abstract'])
-
-    # --- GitHub ---
-    gh_scraper = GithubScraper(config)
-    data_projects = gh_scraper.scrape()
-    for p in data_projects:
-        p['tags'] = tagger.get_tags(p['title'] + " " + p['abstract'])
-
-    # --- Hugging Face ---
-    logger.info("正在抓取 Hugging Face...")
-    hf_scraper = HuggingFaceScraper(config)
-    data_models = hf_scraper.scrape()
-    for m in data_models:
-        custom_tags = tagger.get_tags(m['title'])
-        m['tags'] = list(set(m['tags'] + custom_tags))
-
-    # 3. 合并数据 & 排序
-    all_data = data_papers + data_projects + data_models
-    all_data.sort(key=lambda x: x.get('score', 0), reverse=True)
-    
-    logger.info(f"抓取完成: {len(data_papers)} 论文, {len(data_projects)} 项目, {len(data_models)} 模型")
-
-    # ==========================================
-    # 4. [关键修复] 优先生成标签 (绝对安全的操作)
-    # ==========================================
     all_tags = set()
-    for item in all_data:
+
+    for item in items_to_process:
+        # 生成标签
+        item['tags'] = tagger.generate_tags(item['title'], item['abstract'])
         for t in item['tags']:
-            if t: all_tags.add(t)
+            all_tags.add(t)
+        
+        # 调用 LLM 打分
+        score, comment = llm.review_item(item['title'], item['abstract'], item['source'])
+        item['ai_score'] = score
+        item['ai_comment'] = comment
+        
+        print(f"   [{score}分] {item['title'][:40]}... | {comment}")
+        
+        # 存入数据库
+        db.upsert_item(item)
 
-    # ==========================================
-    # 5. [防爆处理] 生成 AI 摘要 (高风险操作)
-    # ==========================================
-    daily_summary = ""
-    try:
-        # 只有当数据不为空时才调用 LLM
-        if all_data:
-            llm_bot = LLMAgent(config)
-            # 只取前 5 个最重要的数据
-            top_items = all_data[:5] 
-            daily_summary = llm_bot.generate_summary(top_items)
-        else:
-            logger.warning("数据为空，跳过 AI 摘要。")
-            
-    except Exception as e:
-        # 这里捕获所有错误（包括 401 密钥错误），只打印日志，绝对不让程序崩！
-        logger.error(f"⚠️ AI 摘要生成失败 (不影响网页生成): {e}")
-        daily_summary = "（由于网络或配置原因，今日 AI 摘要暂时不可用，请检查日志。）"
-
+    # 5. 生成日报并推送
+    top_items = db.fetch_items(min_score=6) 
+    
+    if top_items:
+        logger.info(f"找到 {len(top_items)} 条高分内容，准备生成日报...")
+        report = llm.generate_daily_report(top_items)
+        send_email_notification(config, report)
+    else:
+        logger.info("今日没有高分内容，不打扰了。")
+        
     # 6. 生成 JS 数据文件
-    # 此时 all_tags 和 daily_summary 都有值了（哪怕是空值），绝对不会报 NameError
+    items_to_process.sort(key=lambda x: x.get('ai_score', 0), reverse=True)
+    
+    daily_summary_text = report if 'report' in locals() else "今日无高分更新"
+    
+    # --- 修复部分：先处理字符串，再放入 f-string ---
+    safe_summary = daily_summary_text.replace('"', '\\"').replace('\n', '\\n')
+    
     js_content = f"""
-    window.RESEARCH_DATA = {json.dumps(all_data, ensure_ascii=False)};
+    window.RESEARCH_DATA = {json.dumps(items_to_process, ensure_ascii=False)};
     window.ALL_TAGS = {json.dumps(list(all_tags), ensure_ascii=False)};
-    window.DAILY_SUMMARY = "{daily_summary}";
+    window.DAILY_SUMMARY = "{safe_summary}";
     window.LAST_UPDATE = "{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}";
     """
     
     web_dir = os.path.join(base_dir, 'web')
     os.makedirs(web_dir, exist_ok=True)
-    
     with open(os.path.join(web_dir, 'data.js'), 'w', encoding='utf-8') as f:
         f.write(js_content)
     
-    logger.info(f"✅ 数据已成功生成至: {os.path.join(web_dir, 'data.js')}")
+    db.close()
+    logger.info("🎉 任务完成！")
 
 if __name__ == "__main__":
     main()
