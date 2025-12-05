@@ -1,25 +1,82 @@
-# 抓取配置
+# 核心抓取关键词
 keywords:
   - "embodied ai"
-  - "robotic manipulation"
   - "sim2real"
-  - "manipulation"
-  - "humanoid robot"
+  - "visual manipulation"
   - "robot learning"
-  - “VLA”
+  - "humanoid robot"
+  - "world model"
+  - "dexterous manipulation"
+  - "vision language action"
+  - "VLA"
+  - "reinforcement learning"
 
-# GitHub Topics
 github_topics:
   - "robotics"
   - "embodied-ai"
   - "manipulation"
   - "sim2real"
+  - "VLA"
+  - "simulation"
+  - "reinforcement-learning"
+  - "lerobot"
 
-# API 配置 (可选，留空则使用公开限额)
-api_keys:
-  github: ""          # GitHub Personal Access Token
-  semantic_scholar: ""
+# --- 新增：智能评分权重 (这是过滤水文的关键) ---
+# 包含这些词的项目/论文会获得高分，排在前面
+interest_scoring:
+  # 高优先级 (权重 3)
+  high:
+    - "embodied ai"
+    - "robotics"
+    - "VLA"
+    - "low-cost"
+    - "low cost"
+    - "aloha"
+    - "mobile aloha"
+    - "diffusion policy"
+    - "imitation learning"
+    - "act"
+    - "teleoperation"
+  # 中优先级 (权重 1)
+  medium:
+    - "transformer"
+    - "reinforcement learning"
+    - "sim2real"
+    - "gripper"
+
+# --- 新增：Hugging Face 监控配置 ---
+huggingface:
+  # 监控的任务类型
+  tasks: 
+    - "robotics"
+    - "VLA"
+    - "reinforcement-learning"
+    - "visual-question-answering"
+    - "text-to-video" # 很多 world model 实际上是 video model
+  # 重点关注的组织 (只要他们发模型，立刻置顶)
+  orgs:
+    - "google"
+    - "meta"
+    - "nvidia"
+    - "allenai"
+    - "microsoft"
+    - "berkeley-learn"
+    - "deepseek"
+    - "qwen"
+    - "kimi"
+    - "stanford-iprl-lab"
+    - "lerobot" # Hugging Face 自家的机器人库
 
 # 抓取限制
-max_arxiv: 50
+max_arxiv: 60
 max_github: 30
+max_hf: 20
+
+# 5. LLM 配置 (这里换成了 SiliconFlow)
+llm:
+  provider: "cloud"
+  base_url: "https://api.siliconflow.cn/v1"
+  # ⬇️⬇️⬇️ 请在这里填入你刚才复制的 SiliconFlow 密钥 ⬇️⬇️⬇️
+  api_key: "sk-cspdauvptgwpungdmyhcbywyarzklnodwsjfupwdzbyfmxkl"
+  # 免费且强大的模型，推荐 Qwen/Qwen2.5-7B-Instruct
+  model_name: "Qwen/Qwen2.5-7B-Instruct"

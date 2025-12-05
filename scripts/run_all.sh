@@ -15,6 +15,9 @@ source "$CONDA_PATH/etc/profile.d/conda.sh"
 
 conda activate embodied_ai
 
+export https_proxy=http://127.0.0.1:7897
+export http_proxy=http://127.0.0.1:7897
+
 python run_scrape.py
 
 if [ $? -eq 0 ]; then
